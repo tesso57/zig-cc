@@ -1,7 +1,12 @@
 const std = @import("std");
+const debug = std.debug;
+const assert = debug.assert;
+const testing = std.testing;
+const mem = std.mem;
+const SinglyLinkedList = std.SinglyLinkedList;
+const Allocator = mem.Allocator;
 
 pub const ParserError = error{InvalidCharacter};
-
 pub fn Parser() type {
     return struct {
         data: []const u8,
@@ -59,6 +64,88 @@ pub fn Parser() type {
     };
 }
 
+pub const TokenKind = enum {
+    TK_RESERVED, // 記号
+    TK_NUM, // 整数トークン
+    TK_EOF, // 入力の終わりを示すトークン
+};
+
+pub const TokenError = error{InvalidCharacter};
+
+pub fn Token() type {
+    return struct {
+        const Self = @This();
+
+        pub const Node = struct {
+            kind: TokenKind,
+            next: ?*Node,
+            val: i32,
+            char: u8,
+        };
+
+        allocator: Allocator,
+
+        pub fn consume(node: *Node, op: u8) bool {
+            return node.kind != TokenKind.TK_RESERVED or node.char != op;
+        }
+
+        pub fn expect(node: *Node, op: u8) !void {
+            if (node.kind != TokenKind.TK_RESERVED or node.char != op)
+                return ParserError.InvalidCharacter;
+        }
+
+        pub fn expectNumber(node: *Node) !i32 {
+            if (node.kind != TokenKind.TK_NUM)
+                return ParserError.InvalidCharacter;
+            const val: i32 = node.val;
+            return val;
+        }
+
+        pub fn atEof(node: *Node) bool {
+            return node.kind == TokenKind.TK_EOF;
+        }
+
+        fn newToken(self: Self, kind: TokenKind, current: *Node, char: u8) *Node {
+            var node = try self.allocator.create(Node);
+            node.kind = kind;
+            node.current = current;
+            node.char = char;
+            current.next = node;
+            return &node;
+        }
+
+        pub fn tokenize(self: Self, string: []const u8) !void {
+            const head = try self.allocator.create(Node);
+            var current = head;
+            var i: i32 = 0;
+            while (string[i] != 0) : (i += 1) {
+                var p = string[i];
+                if (isSpace(p))
+                    continue;
+
+                if (p == '+' or p == '-') {
+                    current = newToken(TokenKind.TK_RESERVED, current, p);
+                    continue;
+                }
+
+                if (isDigit(p)) {
+                    current = newToken(TokenKind.TK_RESERVED, current, p);
+                    current.?.val = 0;
+                }
+            }
+            newToken(TokenKind.TK_EOF, current, ' ');
+        }
+    };
+}
+
+fn isSpace(char: u8) bool {
+    return char == ' ' or char == '\t' or char == '\n';
+}
+
+fn isDigit(char: u8) bool {
+    return '0' <= char and char <= '9';
+}
+
 pub fn main() !void {
     const stdout = std.io.getStdOut();
     const stderr = std.io.getStdErr();
@@ -69,12 +156,17 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+
     var i: usize = 0;
     while (std.os.argv[1][i] != 0) : (i += 1) {}
     const input: []const u8 = std.os.argv[1][0 .. i + 1];
+
     var arg = Parser().init(input, allocator);
     const items = try arg.parse();
     defer allocator.free(items);
     try stdout.writer().print("{s}\n", .{items});
+
+    const token = Token(){ .allocator = allocator };
+    try token.tokenize(input);
     return;
 }
