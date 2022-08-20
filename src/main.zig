@@ -5,64 +5,12 @@ const testing = std.testing;
 const mem = std.mem;
 const SinglyLinkedList = std.SinglyLinkedList;
 const Allocator = mem.Allocator;
+const exit = std.os.exit;
 
-pub const ParserError = error{InvalidCharacter};
-pub fn Parser() type {
-    return struct {
-        data: []const u8,
-        index: usize = 0,
-        allocator: std.mem.Allocator,
-        const Self = @This();
+const stdout = std.io.getStdOut();
+const stderr = std.io.getStdErr();
 
-        pub fn init(data: []const u8, allocator: std.mem.Allocator) Self {
-            return Self{ .data = data, .index = 0, .allocator = allocator };
-        }
-
-        fn getInt(self: *Self) i32 {
-            if (self.index != 0) {
-                self.index += 1;
-            }
-            const prevIndex = self.index;
-            while (self.data[self.index] != 0) : (self.index += 1) {
-                if (self.data[self.index] < '0' or self.data[self.index] > '9') break;
-            }
-            return std.fmt.parseInt(i32, self.data[prevIndex..(self.index)], 10) catch 0;
-        }
-
-        fn isEnd(self: *Self) bool {
-            return self.data[self.index] != 0;
-        }
-
-        fn getTop(self: *Self) u8 {
-            return self.data[self.index];
-        }
-
-        pub fn parse(self: *Self) ![]u8 {
-            var list = std.ArrayList(u8).init(self.allocator);
-            defer list.deinit();
-            try list.appendSlice(".intel_syntax noprefix\n");
-            try list.writer().print(".global main\n", .{});
-            try list.writer().print("main:\n", .{});
-            try list.writer().print("   mov rax, {!}\n", .{self.getInt()});
-
-            while (self.isEnd()) {
-                if (self.getTop() == '+') {
-                    try list.writer().print("   add rax, {!}\n", .{self.getInt()});
-                    continue;
-                }
-
-                if (self.getTop() == '-') {
-                    try list.writer().print("   sub rax, {!}\n", .{self.getInt()});
-                    continue;
-                }
-
-                return ParserError.InvalidCharacter;
-            }
-            try list.writer().print("   ret\n", .{});
-            return list.toOwnedSlice();
-        }
-    };
-}
+const allocator = std.heap.page_allocator;
 
 pub const TokenKind = enum {
     TK_RESERVED, // 記号
@@ -70,72 +18,52 @@ pub const TokenKind = enum {
     TK_EOF, // 入力の終わりを示すトークン
 };
 
-pub const TokenError = error{InvalidCharacter};
+const Token = struct {
+    kind: TokenKind,
+    next: ?*Token,
+    val: i32,
+    char: u8,
+};
 
-pub fn Token() type {
-    return struct {
-        const Self = @This();
+var token: ?*Token = null;
 
-        pub const Node = struct {
-            kind: TokenKind,
-            next: ?*Node,
-            val: i32,
-            char: u8,
-        };
+fn consume(op: u8) bool {
+    if (token.?.kind != TokenKind.TK_RESERVED or token.?.char != op) {
+        return false;
+    }
+    token = token.?.next;
+    return true;
+}
 
-        allocator: Allocator,
+fn expect(op: u8) !void {
+    if (token.?.kind != TokenKind.TK_RESERVED or token.?.char != op) {
+        try stderr.writeAll("expect error\n");
+        exit(1);
+    }
+    token = token.?.next;
+}
 
-        pub fn consume(node: *Node, op: u8) bool {
-            return node.kind != TokenKind.TK_RESERVED or node.char != op;
-        }
+fn expectNumber() !i32 {
+    if (token.?.kind != TokenKind.TK_NUM) {
+        try stderr.writeAll("数ではない\n");
+        exit(1);
+    }
 
-        pub fn expect(node: *Node, op: u8) !void {
-            if (node.kind != TokenKind.TK_RESERVED or node.char != op)
-                return ParserError.InvalidCharacter;
-        }
+    const val = token.?.val;
+    token = token.?.next;
+    return val;
+}
 
-        pub fn expectNumber(node: *Node) !i32 {
-            if (node.kind != TokenKind.TK_NUM)
-                return ParserError.InvalidCharacter;
-            const val: i32 = node.val;
-            return val;
-        }
+fn atEof() bool {
+    return token.?.kind == TokenKind.TK_EOF;
+}
 
-        pub fn atEof(node: *Node) bool {
-            return node.kind == TokenKind.TK_EOF;
-        }
-
-        fn newToken(self: Self, kind: TokenKind, current: *Node, char: u8) *Node {
-            var node = try self.allocator.create(Node);
-            node.kind = kind;
-            node.current = current;
-            node.char = char;
-            current.next = node;
-            return &node;
-        }
-
-        pub fn tokenize(self: Self, string: []const u8) !void {
-            const head = try self.allocator.create(Node);
-            var current = head;
-            var i: i32 = 0;
-            while (string[i] != 0) : (i += 1) {
-                var p = string[i];
-                if (isSpace(p))
-                    continue;
-
-                if (p == '+' or p == '-') {
-                    current = newToken(TokenKind.TK_RESERVED, current, p);
-                    continue;
-                }
-
-                if (isDigit(p)) {
-                    current = newToken(TokenKind.TK_RESERVED, current, p);
-                    current.?.val = 0;
-                }
-            }
-            newToken(TokenKind.TK_EOF, current, ' ');
-        }
-    };
+fn newToken(kind: TokenKind, cur: *Token, char: u8) !*Token {
+    const tok = try allocator.create(Token);
+    tok.kind = kind;
+    tok.char = char;
+    cur.next = tok;
+    return tok;
 }
 
 fn isSpace(char: u8) bool {
@@ -146,27 +74,72 @@ fn isDigit(char: u8) bool {
     return '0' <= char and char <= '9';
 }
 
-pub fn main() !void {
-    const stdout = std.io.getStdOut();
-    const stderr = std.io.getStdErr();
-    if (std.os.argv.len < 2) {
-        try stderr.writeAll("引数の個数が正しくありません");
-        return;
+fn getInt(p: []const u8, start: *usize) i32 {
+    var end = start.* + 1;
+    while (p[end] != 0) : (end += 1) {
+        if (!isDigit(p[end])) break;
+    }
+    const ret = std.fmt.parseInt(i32, p[start.*..end], 10) catch 0;
+    start.* = end;
+    return ret;
+}
+
+fn tokenize(p: []const u8) !*Token {
+    var head: ?Token = Token{ .kind = TokenKind.TK_RESERVED, .next = null, .val = 0, .char = ' ' };
+    var cur = &(head.?);
+
+    var i: usize = 0;
+    while (p[i] != 0) : (i += 1) {
+        if (isSpace(p[i]))
+            continue;
+
+        if (p[i] == '+' or p[i] == '-') {
+            cur = try newToken(TokenKind.TK_RESERVED, cur, p[i]);
+            continue;
+        }
+
+        if (isDigit(p[i])) {
+            cur = try newToken(TokenKind.TK_NUM, cur, p[i]);
+            cur.val = getInt(p, &i);
+            i -= 1;
+            continue;
+        }
+
+        try stderr.writeAll("トークナイズ失敗\n");
+        exit(1);
     }
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    _ = try newToken(TokenKind.TK_EOF, cur, '\n');
+    return head.?.next.?;
+}
+
+pub fn main() !void {
+    if (std.os.argv.len < 2) {
+        try stderr.writeAll("引数の個数が正しくありません");
+        exit(1);
+
+        return;
+    }
 
     var i: usize = 0;
     while (std.os.argv[1][i] != 0) : (i += 1) {}
     const input: []const u8 = std.os.argv[1][0 .. i + 1];
+    token = try tokenize(input);
+    try stdout.writeAll(".intel_syntax noprefix\n");
+    try stdout.writeAll(".globl main\n");
+    try stdout.writeAll("main:\n");
+    try stdout.writer().print("   mov rax, {d}\n", .{try expectNumber()});
 
-    var arg = Parser().init(input, allocator);
-    const items = try arg.parse();
-    defer allocator.free(items);
-    try stdout.writer().print("{s}\n", .{items});
+    while (!atEof()) {
+        if (consume('+')) {
+            try stdout.writer().print("   add rax, {d}\n", .{try expectNumber()});
+            continue;
+        }
 
-    const token = Token(){ .allocator = allocator };
-    try token.tokenize(input);
+        try expect('-');
+        try stdout.writer().print("   sub rax, {d}\n", .{try expectNumber()});
+    }
+    try stdout.writeAll("   ret\n");
+
     return;
 }
