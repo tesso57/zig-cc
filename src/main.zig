@@ -137,14 +137,24 @@ fn expr() !*Node {
 }
 
 fn mul() !*Node {
-    var node = try primary();
+    var node = try unary();
     while (true) {
         if (consume('*')) {
-            node = try newNode(NodeKind.ND_MUL, node, try primary());
+            node = try newNode(NodeKind.ND_MUL, node, try unary());
         } else if (consume('/')) {
-            node = try newNode(NodeKind.ND_DIV, node, try primary());
+            node = try newNode(NodeKind.ND_DIV, node, try unary());
         } else return node;
     }
+}
+
+fn unary() !*Node {
+    if (consume('+'))
+        return try primary();
+
+    if (consume('-'))
+        return try newNode(NodeKind.ND_SUB, try newNodeNum(0), try primary());
+
+    return try primary();
 }
 
 fn primary() anyerror!*Node {
