@@ -7,12 +7,22 @@ const SinglyLinkedList = std.SinglyLinkedList;
 const Allocator = mem.Allocator;
 const exit = std.os.exit;
 
+const util = @import("util.zig");
+const isDigit = util.isDigit;
+const isSpace = util.isSpace;
+fn errorAt(loc: usize, string: []const u8) !void {
+    try util.errorAt(&input, loc, string);
+}
+fn getInt(start: *usize) i32 {
+    return util.getInt(u8, input, start);
+}
+
 const stdout = std.io.getStdOut();
 const stderr = std.io.getStdErr();
 
 const allocator = std.heap.page_allocator;
 
-pub const TokenKind = enum {
+const TokenKind = enum {
     TK_RESERVED, // 記号
     TK_NUM, // 整数トークン
     TK_EOF, // 入力の終わりを示すトークン
@@ -25,39 +35,18 @@ const Token = struct {
     pos: usize,
 };
 
+const NodeKind = enum {
+    ND_ADD, // +
+    ND_SUB, // -
+    ND_MUL, // *
+    ND_DIV, // /
+    ND_NUM, // 整数
+};
+
+const Node = struct { kind: NodeKind, lhs: ?*Node, rhs: ?*Node, val: i32 };
+
 var token: ?*Token = null;
 var input: []const u8 = undefined;
-
-fn isSpace(char: u8) bool {
-    return char == ' ' or char == '\t' or char == '\n';
-}
-
-fn isDigit(char: u8) bool {
-    return '0' <= char and char <= '9';
-}
-
-fn getInt(start: *usize) i32 {
-    var end: usize = start.* + 1;
-    while (input[end] != 0) : (end += 1) {
-        if (!isDigit(input[end])) break;
-    }
-    const ret = std.fmt.parseInt(i32, input[start.*..end], 10) catch 0;
-    start.* = end;
-    return ret;
-}
-
-fn errorAt(loc: usize, string: []const u8) !void {
-    try stderr.writer().print("{s}\n", .{input});
-    {
-        var i: usize = 0;
-        while (i != loc) : (i += 1) {
-            try stderr.writer().print("{c}", .{' '});
-        }
-    }
-    try stderr.writer().print("{s}", .{"^ "});
-    try stderr.writer().print("{s}\n", .{string});
-    exit(1);
-}
 
 fn consume(op: u8) bool {
     if (token.?.kind != TokenKind.TK_RESERVED or input[token.?.pos] != op) {
@@ -70,7 +59,6 @@ fn consume(op: u8) bool {
 fn expect(op: u8) !void {
     if (token.?.kind != TokenKind.TK_RESERVED or input[token.?.pos] != op) {
         try errorAt(token.?.pos, "expect error");
-        exit(1);
     }
     token = token.?.next;
 }
@@ -78,7 +66,6 @@ fn expect(op: u8) !void {
 fn expectNumber() !i32 {
     if (token.?.kind != TokenKind.TK_NUM) {
         try errorAt(token.?.pos, "数ではない");
-        exit(1);
     }
 
     const val = token.?.val;
@@ -106,7 +93,7 @@ fn tokenize(p: *const []const u8) !*Token {
         if (isSpace(p.*[i]))
             continue;
 
-        if (p.*[i] == '+' or p.*[i] == '-') {
+        if (p.*[i] == '+' or p.*[i] == '-' or p.*[i] == '*' or p.*[i] == '/' or p.*[i] == '(' or p.*[i] == ')') {
             cur = try newToken(TokenKind.TK_RESERVED, cur, i);
             continue;
         }
@@ -118,12 +105,87 @@ fn tokenize(p: *const []const u8) !*Token {
             continue;
         }
         try errorAt(i, "トークナイズできない");
-        exit(1);
     }
     _ = try newToken(TokenKind.TK_EOF, cur, 0);
     return head.?.next.?;
 }
 
+fn newNode(kind: NodeKind, lhs: ?*Node, rhs: ?*Node) !*Node {
+    var node = try allocator.create(Node);
+    node.kind = kind;
+    node.lhs = lhs;
+    node.rhs = rhs;
+    return node;
+}
+
+fn newNodeNum(val: i32) !*Node {
+    var node = try allocator.create(Node);
+    node.kind = NodeKind.ND_NUM;
+    node.val = val;
+    return node;
+}
+
+fn expr() !*Node {
+    var node = try mul();
+    while (true) {
+        if (consume('+')) {
+            node = try newNode(NodeKind.ND_ADD, node, try mul());
+        } else if (consume('-')) {
+            node = try newNode(NodeKind.ND_SUB, node, try mul());
+        } else return node;
+    }
+}
+
+fn mul() !*Node {
+    var node = try primary();
+    while (true) {
+        if (consume('*')) {
+            node = try newNode(NodeKind.ND_MUL, node, try primary());
+        } else if (consume('/')) {
+            node = try newNode(NodeKind.ND_DIV, node, try primary());
+        } else return node;
+    }
+}
+
+fn primary() anyerror!*Node {
+    if (consume('(')) {
+        const node = try expr();
+        try expect(')');
+        return node;
+    }
+
+    return newNodeNum(try expectNumber());
+}
+
+fn gen(node: *Node) anyerror!void {
+    if (node.kind == NodeKind.ND_NUM) {
+        try stdout.writer().print("   push {d}\n", .{node.val});
+        return;
+    }
+
+    try gen(node.lhs.?);
+    try gen(node.rhs.?);
+    try stdout.writeAll("   pop rdi\n");
+    try stdout.writeAll("   pop rax\n");
+
+    switch (node.kind) {
+        NodeKind.ND_ADD => {
+            try stdout.writeAll("   add rax, rdi\n");
+        },
+        NodeKind.ND_SUB => {
+            try stdout.writeAll("   sub rax, rdi\n");
+        },
+        NodeKind.ND_MUL => {
+            try stdout.writeAll("   imul rax, rdi\n");
+        },
+        NodeKind.ND_DIV => {
+            try stdout.writeAll("   cqo\n");
+            try stdout.writeAll("   idiv rdi\n");
+        },
+        else => unreachable,
+    }
+    try stdout.writeAll("   push rax\n");
+}
 pub fn main() !void {
     if (std.os.argv.len < 2) {
         try stderr.writeAll("引数の個数が正しくありません");
@@ -136,20 +198,12 @@ pub fn main() !void {
     while (std.os.argv[1][i] != 0) : (i += 1) {}
     input = std.os.argv[1][0 .. i + 1];
     token = try tokenize(&input);
+    const node = try expr();
     try stdout.writeAll(".intel_syntax noprefix\n");
     try stdout.writeAll(".globl main\n");
     try stdout.writeAll("main:\n");
-    try stdout.writer().print("   mov rax, {d}\n", .{try expectNumber()});
-
-    while (!atEof()) {
-        if (consume('+')) {
-            try stdout.writer().print("   add rax, {d}\n", .{try expectNumber()});
-            continue;
-        }
-
-        try expect('-');
-        try stdout.writer().print("   sub rax, {d}\n", .{try expectNumber()});
-    }
+    try gen(node);
+    try stdout.writeAll("   pop rax\n");
     try stdout.writeAll("   ret\n");
 
     return;
