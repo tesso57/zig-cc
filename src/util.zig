@@ -34,3 +34,12 @@ pub fn errorAt(input: *const []const u8, loc: usize, string: []const u8) !void {
     try stderr.writer().print("{s}\n", .{string});
     exit(1);
 }
+
+pub fn isEqual(this: []const u8, that: []const u8) !bool {
+    try stdout.writer().print("{s}\n", .{this});
+    if (this.len != that.len) return false;
+    for (this) |_, i| {
+        if (this[i] != that[i]) return false;
+    }
+    return true;
+}

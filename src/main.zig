@@ -10,6 +10,7 @@ const exit = std.os.exit;
 const util = @import("util.zig");
 const isDigit = util.isDigit;
 const isSpace = util.isSpace;
+const isEqual = util.isEqual;
 fn errorAt(loc: usize, string: []const u8) !void {
     try util.errorAt(&input, loc, string);
 }
@@ -28,12 +29,7 @@ const TokenKind = enum {
     TK_EOF, // 入力の終わりを示すトークン
 };
 
-const Token = struct {
-    kind: TokenKind,
-    next: ?*Token,
-    val: i32,
-    pos: usize,
-};
+const Token = struct { kind: TokenKind, next: ?*Token, val: i32, char: []const u8, pos: usize };
 
 const NodeKind = enum {
     ND_ADD, // +
@@ -45,19 +41,20 @@ const NodeKind = enum {
 
 const Node = struct { kind: NodeKind, lhs: ?*Node, rhs: ?*Node, val: i32 };
 
+// Global Variables
 var token: ?*Token = null;
 var input: []const u8 = undefined;
 
-fn consume(op: u8) bool {
-    if (token.?.kind != TokenKind.TK_RESERVED or input[token.?.pos] != op) {
+fn consume(op: []const u8) !bool {
+    if (token.?.kind != TokenKind.TK_RESERVED or try isEqual(token.?.char, op)) {
         return false;
     }
     token = token.?.next;
     return true;
 }
 
-fn expect(op: u8) !void {
-    if (token.?.kind != TokenKind.TK_RESERVED or input[token.?.pos] != op) {
+fn expect(op: []const u8) !void {
+    if (token.?.kind != TokenKind.TK_RESERVED or try isEqual(token.?.char, op)) {
         try errorAt(token.?.pos, "expect error");
     }
     token = token.?.next;
@@ -77,16 +74,17 @@ fn atEof() bool {
     return token.?.kind == TokenKind.TK_EOF;
 }
 
-fn newToken(kind: TokenKind, cur: *Token, pos: usize) !*Token {
+fn newToken(kind: TokenKind, cur: *Token, char: []const u8) !*Token {
     const tok = try allocator.create(Token);
     tok.kind = kind;
-    tok.pos = pos;
+    tok.char = char;
+    tok.pos = 0;
     cur.next = tok;
     return tok;
 }
 
 fn tokenize(p: *const []const u8) !*Token {
-    var head: ?Token = Token{ .kind = TokenKind.TK_RESERVED, .next = null, .val = 0, .pos = 0 };
+    var head: ?Token = Token{ .kind = TokenKind.TK_RESERVED, .next = null, .val = 0, .char = "", .pos = 0 };
     var cur = &(head.?);
     var i: usize = 0;
     while (p.*[i] != 0) : (i += 1) {
@@ -94,19 +92,19 @@ fn tokenize(p: *const []const u8) !*Token {
             continue;
 
         if (p.*[i] == '+' or p.*[i] == '-' or p.*[i] == '*' or p.*[i] == '/' or p.*[i] == '(' or p.*[i] == ')') {
-            cur = try newToken(TokenKind.TK_RESERVED, cur, i);
+            cur = try newToken(TokenKind.TK_RESERVED, cur, &[1]u8{p.*[i]});
             continue;
         }
 
         if (isDigit(p.*[i])) {
-            cur = try newToken(TokenKind.TK_NUM, cur, i);
+            cur = try newToken(TokenKind.TK_NUM, cur, &[1]u8{p.*[i]});
             cur.val = getInt(&i);
             i -= 1;
             continue;
         }
         try errorAt(i, "トークナイズできない");
     }
-    _ = try newToken(TokenKind.TK_EOF, cur, 0);
+    _ = try newToken(TokenKind.TK_EOF, cur, "");
     return head.?.next.?;
 }
 
@@ -128,9 +126,9 @@ fn newNodeNum(val: i32) !*Node {
 fn expr() !*Node {
     var node = try mul();
     while (true) {
-        if (consume('+')) {
+        if (try consume("+")) {
             node = try newNode(NodeKind.ND_ADD, node, try mul());
-        } else if (consume('-')) {
+        } else if (try consume("-")) {
             node = try newNode(NodeKind.ND_SUB, node, try mul());
         } else return node;
     }
@@ -139,28 +137,28 @@ fn expr() !*Node {
 fn mul() !*Node {
     var node = try unary();
     while (true) {
-        if (consume('*')) {
+        if (try consume("*")) {
             node = try newNode(NodeKind.ND_MUL, node, try unary());
-        } else if (consume('/')) {
+        } else if (try consume("/")) {
             node = try newNode(NodeKind.ND_DIV, node, try unary());
         } else return node;
     }
 }
 
 fn unary() !*Node {
-    if (consume('+'))
+    if (try consume("+"))
         return try primary();
 
-    if (consume('-'))
+    if (try consume("-"))
         return try newNode(NodeKind.ND_SUB, try newNodeNum(0), try primary());
 
     return try primary();
 }
 
 fn primary() anyerror!*Node {
-    if (consume('(')) {
+    if (try consume("(")) {
         const node = try expr();
-        try expect(')');
+        try expect(")");
         return node;
     }
 
@@ -196,6 +194,7 @@ fn gen(node: *Node) anyerror!void {
     }
     try stdout.writeAll("   push rax\n");
 }
+
 pub fn main() !void {
     if (std.os.argv.len < 2) {
         try stderr.writeAll("引数の個数が正しくありません");

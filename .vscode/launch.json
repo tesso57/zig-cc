@@ -1,0 +1,27 @@
+{
+    // IntelliSense を使用して利用可能な属性を学べます。
+    // 既存の属性の説明をホバーして表示します。
+    // 詳細情報は次を確認してください: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "run",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/zig-out/bin/zig-cc",
+            "args": [
+                "${input:inputArgs}"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+    ],
+    "inputs": [
+        {
+            "id": "inputArgs",
+            "type": "promptString",
+            "description": "実行時引数"
+        }
+    ]
+}
