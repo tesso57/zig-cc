@@ -37,6 +37,10 @@ const NodeKind = enum {
     ND_MUL, // *
     ND_DIV, // /
     ND_NUM, // 整数
+    ND_EQ, // ==
+    ND_NE, // !=
+    ND_LT, // <
+    ND_LE, // <=
 };
 
 const Node = struct { kind: NodeKind, lhs: ?*Node, rhs: ?*Node, val: i32 };
@@ -45,8 +49,8 @@ const Node = struct { kind: NodeKind, lhs: ?*Node, rhs: ?*Node, val: i32 };
 var token: ?*Token = null;
 var input: []const u8 = undefined;
 
-fn consume(op: []const u8) !bool {
-    if (token.?.kind != TokenKind.TK_RESERVED or try isEqual(token.?.char, op)) {
+fn consume(op: []const u8) bool {
+    if (token.?.kind != TokenKind.TK_RESERVED or !isEqual(token.?.char, op)) {
         return false;
     }
     token = token.?.next;
@@ -54,7 +58,7 @@ fn consume(op: []const u8) !bool {
 }
 
 fn expect(op: []const u8) !void {
-    if (token.?.kind != TokenKind.TK_RESERVED or try isEqual(token.?.char, op)) {
+    if (token.?.kind != TokenKind.TK_RESERVED or !isEqual(token.?.char, op)) {
         try errorAt(token.?.pos, "expect error");
     }
     token = token.?.next;
@@ -83,21 +87,39 @@ fn newToken(kind: TokenKind, cur: *Token, char: []const u8) !*Token {
     return tok;
 }
 
-fn tokenize(p: *const []const u8) !*Token {
+fn tokenize(p: []const u8) !*Token {
     var head: ?Token = Token{ .kind = TokenKind.TK_RESERVED, .next = null, .val = 0, .char = "", .pos = 0 };
     var cur = &(head.?);
     var i: usize = 0;
-    while (p.*[i] != 0) : (i += 1) {
-        if (isSpace(p.*[i]))
+    while (p[i] != 0) : (i += 1) {
+        if (isSpace(p[i]))
             continue;
 
-        if (p.*[i] == '+' or p.*[i] == '-' or p.*[i] == '*' or p.*[i] == '/' or p.*[i] == '(' or p.*[i] == ')') {
-            cur = try newToken(TokenKind.TK_RESERVED, cur, &[1]u8{p.*[i]});
+        if (p[i] == '!' or p[i] == '=') {
+            if (p[i + 1] == '=') {
+                cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 2]);
+                i += 1;
+                continue;
+            }
+        }
+
+        if (p[i] == '>' or p[i] == '<') {
+            if (p[i + 1] == '=') {
+                cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 2]);
+                i += 1;
+                continue;
+            }
+            cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1]);
             continue;
         }
 
-        if (isDigit(p.*[i])) {
-            cur = try newToken(TokenKind.TK_NUM, cur, &[1]u8{p.*[i]});
+        if (p[i] == '+' or p[i] == '-' or p[i] == '*' or p[i] == '/' or p[i] == '(' or p[i] == ')') {
+            cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1]);
+            continue;
+        }
+
+        if (isDigit(p[i])) {
+            cur = try newToken(TokenKind.TK_NUM, cur, p[i .. i + 1]);
             cur.val = getInt(&i);
             i -= 1;
             continue;
@@ -124,11 +146,42 @@ fn newNodeNum(val: i32) !*Node {
 }
 
 fn expr() !*Node {
+    return try equality();
+}
+
+fn equality() !*Node {
+    var node = try relational();
+    while (true) {
+        if (consume("==")) {
+            node = try newNode(NodeKind.ND_EQ, node, try relational());
+        } else if (consume("!=")) {
+            node = try newNode(NodeKind.ND_NE, node, try relational());
+        } else return node;
+    }
+}
+
+fn relational() !*Node {
+    var node = try add();
+
+    while (true) {
+        if (consume("<")) {
+            node = try newNode(NodeKind.ND_LT, node, try add());
+        } else if (consume("<=")) {
+            node = try newNode(NodeKind.ND_LE, node, try add());
+        } else if (consume(">")) {
+            node = try newNode(NodeKind.ND_LT, try add(), node);
+        } else if (consume(">=")) {
+            node = try newNode(NodeKind.ND_LE, try add(), node);
+        } else return node;
+    }
+}
+
+fn add() !*Node {
     var node = try mul();
     while (true) {
-        if (try consume("+")) {
+        if (consume("+")) {
             node = try newNode(NodeKind.ND_ADD, node, try mul());
-        } else if (try consume("-")) {
+        } else if (consume("-")) {
             node = try newNode(NodeKind.ND_SUB, node, try mul());
         } else return node;
     }
@@ -137,26 +190,26 @@ fn expr() !*Node {
 fn mul() !*Node {
     var node = try unary();
     while (true) {
-        if (try consume("*")) {
+        if (consume("*")) {
             node = try newNode(NodeKind.ND_MUL, node, try unary());
-        } else if (try consume("/")) {
+        } else if (consume("/")) {
             node = try newNode(NodeKind.ND_DIV, node, try unary());
         } else return node;
     }
 }
 
 fn unary() !*Node {
-    if (try consume("+"))
+    if (consume("+"))
         return try primary();
 
-    if (try consume("-"))
+    if (consume("-"))
         return try newNode(NodeKind.ND_SUB, try newNodeNum(0), try primary());
 
     return try primary();
 }
 
 fn primary() anyerror!*Node {
-    if (try consume("(")) {
+    if (consume("(")) {
         const node = try expr();
         try expect(")");
         return node;
@@ -190,6 +243,26 @@ fn gen(node: *Node) anyerror!void {
             try stdout.writeAll("   cqo\n");
             try stdout.writeAll("   idiv rdi\n");
         },
+        NodeKind.ND_EQ => {
+            try stdout.writeAll("   cmp rax, rdi\n");
+            try stdout.writeAll("   sete al\n");
+            try stdout.writeAll("   movzb rax, al\n");
+        },
+        NodeKind.ND_NE => {
+            try stdout.writeAll("   cmp rax, rdi\n");
+            try stdout.writeAll("   setne al\n");
+            try stdout.writeAll("   movzb rax, al\n");
+        },
+        NodeKind.ND_LT => {
+            try stdout.writeAll("   cmp rax, rdi\n");
+            try stdout.writeAll("   setl al\n");
+            try stdout.writeAll("   movzb rax, al\n");
+        },
+        NodeKind.ND_LE => {
+            try stdout.writeAll("   cmp rax, rdi\n");
+            try stdout.writeAll("   setle al\n");
+            try stdout.writeAll("   movzb rax, al\n");
+        },
         else => unreachable,
     }
     try stdout.writeAll("   push rax\n");
@@ -206,7 +279,7 @@ pub fn main() !void {
     var i: usize = 0;
     while (std.os.argv[1][i] != 0) : (i += 1) {}
     input = std.os.argv[1][0 .. i + 1];
-    token = try tokenize(&input);
+    token = try tokenize(input);
     const node = try expr();
     try stdout.writeAll(".intel_syntax noprefix\n");
     try stdout.writeAll(".globl main\n");
