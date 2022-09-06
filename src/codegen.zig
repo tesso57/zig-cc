@@ -15,23 +15,62 @@ const Node = parse.Node;
 const NodeKind = parse.NodeKind;
 
 pub fn codegen(node: *Node) anyerror!void {
+    var cur: ?*Node = node;
     try stdout.writeAll(".intel_syntax noprefix\n");
     try stdout.writeAll(".globl main\n");
     try stdout.writeAll("main:\n");
 
-    try gen(node);
+    // プロローグ
+    // 変数26個分の領域を確保する
+    try stdout.writeAll("   push rbp\n");
+    try stdout.writeAll("   mov rbp, rsp\n");
+    try stdout.writeAll("   sub rsp, 208\n");
 
+    while (cur.?.kind != NodeKind.ND_EOF) : (cur = cur.?.next.?) {
+        try gen(cur.?);
+    }
     try stdout.writeAll("   pop rax\n");
+
+    try stdout.writeAll("   mov rsp, rbp\n");
+    try stdout.writeAll("   pop rbp\n");
     try stdout.writeAll("   ret\n");
 }
 
+fn genLval(node: *Node) !void {
+    if (node.kind != NodeKind.ND_LVAR)
+        try stderr.writeAll("代入の左辺値が変数ではありません");
+    try stdout.writeAll("   mov rax, rbp\n");
+    try stdout.writer().print("   sub rax, {d}\n", .{node.offset});
+    try stdout.writeAll("   push rax\n");
+}
+
 fn gen(node: *Node) anyerror!void {
-    if (node.kind == NodeKind.ND_NUM) {
-        try stdout.writer().print("   push {d}\n", .{node.val});
-        return;
+    switch (node.kind) {
+        NodeKind.ND_NUM => {
+            try stdout.writer().print("   push {d}\n", .{node.val});
+            return;
+        },
+        NodeKind.ND_LVAR => {
+            try genLval(node);
+            try stdout.writeAll("   pop rax\n");
+            try stdout.writeAll("   mov rax, [rax]\n");
+            try stdout.writeAll("   push rax\n");
+            return;
+        },
+        NodeKind.ND_ASSIGN => {
+            try genLval(node.lhs.?);
+            try gen(node.rhs.?);
+            try stdout.writeAll("   pop rdi\n");
+            try stdout.writeAll("   pop rax\n");
+            try stdout.writeAll("   mov [rax], rdi\n");
+            try stdout.writeAll("   push rdi\n");
+            return;
+        },
+        else => {},
     }
     try gen(node.lhs.?);
     try gen(node.rhs.?);
+
     try stdout.writeAll("   pop rdi\n");
     try stdout.writeAll("   pop rax\n");
 

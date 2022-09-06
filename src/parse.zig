@@ -23,6 +23,7 @@ const getInt = util.getInt;
 
 const TokenKind = enum {
     TK_RESERVED, // 記号
+    TK_IDENT, // 識別子
     TK_NUM, // 整数トークン
     TK_EOF, // 入力の終わりを示すトークン
 };
@@ -39,14 +40,17 @@ pub const NodeKind = enum {
     ND_NE, // !=
     ND_LT, // <
     ND_LE, // <=
+    ND_ASSIGN, // =
+    ND_LVAR, // ローカル変数
+    ND_EOF, // ノードのリストの終了を表す。
 };
 
-pub const Node = struct { kind: NodeKind, lhs: ?*Node, rhs: ?*Node, val: i32 };
+pub const Node = struct { kind: NodeKind, next: ?*Node, lhs: ?*Node, rhs: ?*Node, val: i32, offset: i32 };
 
 pub fn parse(p: []const u8) !*Node {
     input = p;
     try tokenize(p);
-    return try expr();
+    return try program();
 }
 
 fn newToken(kind: TokenKind, cur: *Token, char: []const u8, pos: usize) !*Token {
@@ -81,6 +85,16 @@ pub fn tokenize(p: []const u8) !void {
                 continue;
             }
             cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1], i);
+            continue;
+        }
+
+        if (p[i] == '=' or p[i] == ';') {
+            cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1], i);
+            continue;
+        }
+
+        if ('a' <= p[i] and p[i] <= 'z') {
+            cur = try newToken(TokenKind.TK_IDENT, cur, p[i .. i + 1], i);
             continue;
         }
 
@@ -141,8 +155,52 @@ fn newNodeNum(val: i32) !*Node {
     return node;
 }
 
-pub fn expr() !*Node {
-    return try equality();
+fn newNodeVal() !*Node {
+    var node = try allocator.create(Node);
+    node.kind = NodeKind.ND_LVAR;
+    node.offset = (token.?.char[0] - 'a' + 1) * 8; // メモリのオフセットを計算
+    token = token.?.next;
+    return node;
+}
+
+fn program() !*Node {
+    var head: ?Node = Node{
+        .kind = NodeKind.ND_ADD,
+        .next = null,
+        .lhs = null,
+        .rhs = null,
+        .val = 0,
+        .offset = 0,
+    };
+    var cur: *Node = &(head.?);
+    while (token.?.kind != TokenKind.TK_EOF) {
+        cur.next = try stmt();
+        cur = cur.next.?;
+    }
+
+    var nodeEOF = try allocator.create(Node);
+    nodeEOF.kind = NodeKind.ND_EOF;
+    cur.next = nodeEOF;
+
+    return head.?.next.?;
+}
+
+fn stmt() !*Node {
+    var node = try expr();
+    try expect(";");
+    return node;
+}
+
+fn expr() !*Node {
+    return try assign();
+}
+
+fn assign() anyerror!*Node {
+    var node = try equality();
+    if (consume("="))
+        node = try newNode(NodeKind.ND_ASSIGN, node, try assign());
+
+    return node;
 }
 
 fn equality() !*Node {
@@ -211,5 +269,9 @@ fn primary() anyerror!*Node {
         return node;
     }
 
-    return newNodeNum(try expectNumber());
+    if (token.?.kind == TokenKind.TK_NUM) {
+        return newNodeNum(try expectNumber());
+    }
+
+    return newNodeVal();
 }
