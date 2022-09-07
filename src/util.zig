@@ -18,8 +18,16 @@ pub fn getInt(comptime T: type, input: []const T, start: *usize) i32 {
         if (!isDigit(input[end])) break;
     }
     const ret = std.fmt.parseInt(i32, input[start.*..end], 10) catch 0;
-    start.* = end;
+    start.* = end - 1;
     return ret;
+}
+
+pub fn isIdent1(p: u8) bool {
+    return ('a' <= p and p <= 'z') or ('A' <= p and p <= 'Z') or p == '_';
+}
+
+pub fn isIdent2(p: u8) bool {
+    return isIdent1(p) or ('0' <= p and p <= '9');
 }
 
 pub fn errorAt(input: []const u8, loc: usize, string: []const u8) !void {

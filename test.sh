@@ -49,4 +49,6 @@ assert 0 '1>=2;'
 assert 1 '1==1;'
 assert 1 'a=1;a;'
 assert 2 'a=1;a+a;'
+assert 123 'abc=123;abc;'
+assert 246 'abc=123;abc + abc;'
 echo OK

@@ -13,13 +13,15 @@ const util = @import("util.zig");
 const isDigit = util.isDigit;
 const isSpace = util.isSpace;
 const isEqual = util.isEqual;
+const isIdent1 = util.isIdent1;
+const isIdent2 = util.isIdent2;
+const errorAt = util.errorAt;
+const getInt = util.getInt;
 
 // Global Variables
 var token: ?*Token = null;
 var input: []const u8 = undefined;
-
-const errorAt = util.errorAt;
-const getInt = util.getInt;
+var locals: ?*LVar = null;
 
 const TokenKind = enum {
     TK_RESERVED, // 記号
@@ -28,7 +30,19 @@ const TokenKind = enum {
     TK_EOF, // 入力の終わりを示すトークン
 };
 
-pub const Token = struct { kind: TokenKind, next: ?*Token, val: i32, char: []const u8, pos: usize };
+pub const Token = struct {
+    kind: TokenKind,
+    next: ?*Token,
+    val: i32,
+    char: []const u8,
+    pos: usize,
+};
+
+pub const LVar = struct {
+    next: ?*LVar,
+    name: []const u8,
+    offset: i32,
+};
 
 pub const NodeKind = enum {
     ND_ADD, // +
@@ -45,7 +59,14 @@ pub const NodeKind = enum {
     ND_EOF, // ノードのリストの終了を表す。
 };
 
-pub const Node = struct { kind: NodeKind, next: ?*Node, lhs: ?*Node, rhs: ?*Node, val: i32, offset: i32 };
+pub const Node = struct {
+    kind: NodeKind,
+    next: ?*Node,
+    lhs: ?*Node,
+    rhs: ?*Node,
+    val: i32,
+    offset: i32,
+};
 
 pub fn parse(p: []const u8) !*Node {
     input = p;
@@ -93,8 +114,18 @@ pub fn tokenize(p: []const u8) !void {
             continue;
         }
 
-        if ('a' <= p[i] and p[i] <= 'z') {
-            cur = try newToken(TokenKind.TK_IDENT, cur, p[i .. i + 1], i);
+        // if ('a' <= p[i] and p[i] <= 'z') {
+        //     cur = try newToken(TokenKind.TK_IDENT, cur, p[i .. i + 1], i);
+        //     continue;
+        // }
+
+        if (isIdent1(p[i])) {
+            var j = i + 1;
+            while (p[j] != 0) : (j += 1) {
+                if (!isIdent2(p[j])) break;
+            }
+            cur = try newToken(TokenKind.TK_RESERVED, cur, p[i..j], i);
+            i = j - 1;
             continue;
         }
 
@@ -106,13 +137,22 @@ pub fn tokenize(p: []const u8) !void {
         if (isDigit(p[i])) {
             cur = try newToken(TokenKind.TK_NUM, cur, p[i .. i + 1], i);
             cur.val = getInt(u8, p, &i);
-            i -= 1;
             continue;
         }
         try errorAt(p, i, "トークナイズできない");
     }
     _ = try newToken(TokenKind.TK_EOF, cur, "", i);
     token = head.?.next.?;
+}
+
+fn findLVar() ?*LVar {
+    var cur = locals;
+    while (cur != undefined or cur != null) : (cur = cur.?.next) {
+        if (isEqual(cur.?.name, token.?.char)) {
+            return cur;
+        }
+    }
+    return null;
 }
 
 fn consume(op: []const u8) bool {
@@ -158,7 +198,23 @@ fn newNodeNum(val: i32) !*Node {
 fn newNodeVal() !*Node {
     var node = try allocator.create(Node);
     node.kind = NodeKind.ND_LVAR;
-    node.offset = (token.?.char[0] - 'a' + 1) * 8; // メモリのオフセットを計算
+    var lvar = findLVar();
+    if (lvar != null) {
+        node.offset = lvar.?.offset;
+    } else {
+        // create new lvar
+        if (locals == null) {
+            locals = try allocator.create(LVar);
+            locals.?.offset = 0;
+            locals.?.next = null;
+        }
+        lvar = try allocator.create(LVar);
+        lvar.?.next = locals;
+        lvar.?.name = token.?.char;
+        lvar.?.offset = locals.?.offset + 8;
+        node.offset = lvar.?.offset;
+        locals = lvar;
+    }
     token = token.?.next;
     return node;
 }
