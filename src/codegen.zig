@@ -66,6 +66,14 @@ fn gen(node: *Node) anyerror!void {
             try stdout.writeAll("   push rdi\n");
             return;
         },
+        NodeKind.ND_RETURN => {
+            try gen(node.lhs.?);
+            try stdout.writeAll("   pop rax\n");
+            try stdout.writeAll("   mov rsp, rbp\n");
+            try stdout.writeAll("   pop rbp\n");
+            try stdout.writeAll("   ret\n");
+            return;
+        },
         else => {},
     }
     try gen(node.lhs.?);

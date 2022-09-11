@@ -30,6 +30,10 @@ pub fn isIdent2(p: u8) bool {
     return isIdent1(p) or ('0' <= p and p <= '9');
 }
 
+pub fn isAlnum(p: u8) bool {
+    return isIdent2(p);
+}
+
 pub fn errorAt(input: []const u8, loc: usize, string: []const u8) !void {
     try stderr.writer().print("{s}\n", .{input});
     {

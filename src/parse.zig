@@ -13,6 +13,7 @@ const util = @import("util.zig");
 const isDigit = util.isDigit;
 const isSpace = util.isSpace;
 const isEqual = util.isEqual;
+const isAlnum = util.isAlnum;
 const isIdent1 = util.isIdent1;
 const isIdent2 = util.isIdent2;
 const errorAt = util.errorAt;
@@ -27,6 +28,7 @@ const TokenKind = enum {
     TK_RESERVED, // 記号
     TK_IDENT, // 識別子
     TK_NUM, // 整数トークン
+    TK_RETURN, // return
     TK_EOF, // 入力の終わりを示すトークン
 };
 
@@ -57,6 +59,7 @@ pub const NodeKind = enum {
     ND_ASSIGN, // =
     ND_LVAR, // ローカル変数
     ND_EOF, // ノードのリストの終了を表す。
+    ND_RETURN, // RETURN
 };
 
 pub const Node = struct {
@@ -114,10 +117,13 @@ pub fn tokenize(p: []const u8) !void {
             continue;
         }
 
-        // if ('a' <= p[i] and p[i] <= 'z') {
-        //     cur = try newToken(TokenKind.TK_IDENT, cur, p[i .. i + 1], i);
-        //     continue;
-        // }
+        if (p.len - i >= 7) {
+            if (isEqual(p[i .. i + 6], "return") and !isAlnum(p[i + 6])) {
+                cur = try newToken(TokenKind.TK_RETURN, cur, "return", i);
+                i += 5;
+                continue;
+            }
+        }
 
         if (isIdent1(p[i])) {
             var j = i + 1;
@@ -165,7 +171,9 @@ fn consume(op: []const u8) bool {
 
 fn expect(op: []const u8) !void {
     if (token.?.kind != TokenKind.TK_RESERVED or !isEqual(token.?.char, op)) {
-        try errorAt(input, token.?.pos, "expect error");
+        var buf: [128]u8 = undefined;
+        const slice = try std.fmt.bufPrint(&buf, "expect \"{s}\" but there is the other token.", .{op});
+        try errorAt(input, token.?.pos, slice);
     }
     token = token.?.next;
 }
@@ -242,8 +250,15 @@ fn program() !*Node {
 }
 
 fn stmt() !*Node {
-    var node = try expr();
+    var node: *Node = undefined;
+    if (token.?.kind == TokenKind.TK_RETURN) {
+        token = token.?.next;
+        node = try newNode(NodeKind.ND_RETURN, try expr(), null);
+    } else {
+        node = try expr();
+    }
     try expect(";");
+
     return node;
 }
 
