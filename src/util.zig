@@ -36,11 +36,9 @@ pub fn isAlnum(p: u8) bool {
 
 pub fn errorAt(input: []const u8, loc: usize, string: []const u8) !void {
     try stderr.writer().print("{s}\n", .{input});
-    {
-        var i: usize = 0;
-        while (i != loc) : (i += 1) {
-            try stderr.writer().print("{c}", .{' '});
-        }
+    var i: usize = 0;
+    while (i != loc) : (i += 1) {
+        try stderr.writer().print("{c}", .{' '});
     }
     try stderr.writer().print("{s}", .{"^ "});
     try stderr.writer().print("{s}\n", .{string});

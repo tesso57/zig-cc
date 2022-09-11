@@ -53,4 +53,5 @@ assert 123 'abc=123;abc;'
 assert 246 'abc=123;abc + abc;'
 assert 14 'a = 3;b = 5 * 6 - 8;return a + b / 2;'
 assert 3 'a = 3;b = 5 * 6 - 8;return a;'
+assert 3 'if(1) 2;if(1) 2;if(1) 2;if(1) 2;if(1) 3;'
 echo OK

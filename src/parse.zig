@@ -29,6 +29,10 @@ const TokenKind = enum {
     TK_IDENT, // 識別子
     TK_NUM, // 整数トークン
     TK_RETURN, // return
+    TK_IF, // if
+    TK_ELSE, // else
+    TK_WHILE, // while
+    TK_FOR, // for
     TK_EOF, // 入力の終わりを示すトークン
 };
 
@@ -60,6 +64,10 @@ pub const NodeKind = enum {
     ND_LVAR, // ローカル変数
     ND_EOF, // ノードのリストの終了を表す。
     ND_RETURN, // RETURN
+    ND_IF, // if
+    ND_IF_ELSE, // if else
+    ND_WHILE, // while
+    ND_FOR, // for
 };
 
 pub const Node = struct {
@@ -117,12 +125,34 @@ pub fn tokenize(p: []const u8) !void {
             continue;
         }
 
-        if (p.len - i >= 7) {
-            if (isEqual(p[i .. i + 6], "return") and !isAlnum(p[i + 6])) {
-                cur = try newToken(TokenKind.TK_RETURN, cur, "return", i);
-                i += 5;
-                continue;
-            }
+        if (p.len - i >= "return*".len and isEqual(p[i .. i + "return".len], "return") and !isAlnum(p[i + "return".len])) {
+            cur = try newToken(TokenKind.TK_RETURN, cur, "return", i);
+            i += "return".len - 1;
+            continue;
+        }
+
+        if (p.len - i >= "if*".len and isEqual(p[i .. i + "if".len], "if") and !isAlnum(p[i + "if".len])) {
+            cur = try newToken(TokenKind.TK_IF, cur, "if", i);
+            i += "if".len - 1;
+            continue;
+        }
+
+        if (p.len - i >= "else*".len and isEqual(p[i .. i + "else".len], "else") and !isAlnum(p[i + "else".len])) {
+            cur = try newToken(TokenKind.TK_ELSE, cur, "else", i);
+            i += "else".len - 1;
+            continue;
+        }
+
+        if (p.len - i >= "while*".len and isEqual(p[i .. i + "while".len], "while") and !isAlnum(p[i + "while".len])) {
+            cur = try newToken(TokenKind.TK_WHILE, cur, "while", i);
+            i += "while".len - 1;
+            continue;
+        }
+
+        if (p.len - i >= "for*".len and isEqual(p[i .. i + "for".len], "for") and !isAlnum(p[i + "for".len])) {
+            cur = try newToken(TokenKind.TK_FOR, cur, "for", i);
+            i += "for".len - 1;
+            continue;
         }
 
         if (isIdent1(p[i])) {
@@ -153,7 +183,7 @@ pub fn tokenize(p: []const u8) !void {
 
 fn findLVar() ?*LVar {
     var cur = locals;
-    while (cur != undefined or cur != null) : (cur = cur.?.next) {
+    while (cur != null) : (cur = cur.?.next) {
         if (isEqual(cur.?.name, token.?.char)) {
             return cur;
         }
@@ -249,14 +279,38 @@ fn program() !*Node {
     return head.?.next.?;
 }
 
-fn stmt() !*Node {
+fn stmt() anyerror!*Node {
     var node: *Node = undefined;
-    if (token.?.kind == TokenKind.TK_RETURN) {
-        token = token.?.next;
-        node = try newNode(NodeKind.ND_RETURN, try expr(), null);
-    } else {
-        node = try expr();
+
+    switch (token.?.kind) {
+        TokenKind.TK_RETURN => {
+            token = token.?.next;
+            node = try newNode(NodeKind.ND_RETURN, try expr(), null);
+        },
+        TokenKind.TK_IF => {
+            token = token.?.next;
+            try expect("(");
+            const exp = try expr();
+            try expect(")");
+            const then = try stmt();
+            if (token.?.kind == TokenKind.TK_ELSE) {
+                const _else = try stmt();
+                const stmts = try newNode(NodeKind.ND_IF_ELSE, then, _else);
+                return try newNode(NodeKind.ND_IF_ELSE, exp, stmts);
+            }
+            return try newNode(NodeKind.ND_IF, exp, then);
+        },
+        TokenKind.TK_WHILE => {
+            token = token.?.next;
+            try expect("(");
+            node = try newNode(NodeKind.ND_IF, try expr(), null);
+        },
+        TokenKind.TK_FOR => {},
+        else => {
+            node = try expr();
+        },
     }
+
     try expect(";");
 
     return node;

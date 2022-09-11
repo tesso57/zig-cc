@@ -14,6 +14,8 @@ const parse = @import("./parse.zig");
 const Node = parse.Node;
 const NodeKind = parse.NodeKind;
 
+var label: u32 = 0;
+
 pub fn codegen(node: *Node) anyerror!void {
     var cur: ?*Node = node;
     try stdout.writeAll(".intel_syntax noprefix\n");
@@ -72,6 +74,17 @@ fn gen(node: *Node) anyerror!void {
             try stdout.writeAll("   mov rsp, rbp\n");
             try stdout.writeAll("   pop rbp\n");
             try stdout.writeAll("   ret\n");
+            return;
+        },
+        NodeKind.ND_IF => {
+            const now = label;
+            label += 1;
+            try gen(node.lhs.?);
+            try stdout.writeAll("   pop rax\n");
+            try stdout.writeAll("   cmp rax, 0\n");
+            try stdout.writer().print("   je .Lend{d}\n", .{now});
+            try gen(node.rhs.?);
+            try stdout.writer().print(".Lend{d}:\n", .{now});
             return;
         },
         else => {},
