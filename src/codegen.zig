@@ -115,6 +115,34 @@ fn gen(node: *Node) anyerror!void {
             try stdout.writer().print(".Lend{d}:\n", .{now});
             return;
         },
+        NodeKind.ND_FOR => {
+            const now = label;
+            label += 1;
+            if (node.lhs.?.lhs != null)
+                try gen(node.lhs.?.lhs.?);
+
+            try stdout.writer().print(".Lbegin{d}:\n", .{now});
+
+            if (node.lhs.?.rhs != null) {
+                try gen(node.lhs.?.rhs.?);
+            } else {
+                try stdout.writeAll("   push 1\n");
+            }
+
+            try stdout.writeAll("   pop rax\n");
+            try stdout.writeAll("   cmp rax, 0\n");
+            try stdout.writer().print("   je .Lend{d}\n", .{now});
+
+            if (node.rhs.?.rhs != null)
+                try gen(node.rhs.?.rhs.?);
+
+            if (node.rhs.?.lhs != null)
+                try gen(node.rhs.?.lhs.?);
+
+            try stdout.writer().print("   jmp .Lbegin{d}\n", .{now});
+            try stdout.writer().print(".Lend{d}:\n", .{now});
+            return;
+        },
         else => {},
     }
     try gen(node.lhs.?);

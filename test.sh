@@ -58,4 +58,7 @@ assert 3 'a = 3;b = 5 * 6 - 8;return a;'
 assert 3 'if(1) 2;if(1) 2;if(1) 2;if(1) 2;if(1) 3;'
 assert 1 'if(1) 1;else 0;'
 assert 0 'if(0) 1;else 0;'
+
+assert 10 'i = 0; while(i < 10) i = i + 1; return i;'
+assert 100 'for(i=0;i < 100;i = i + 1) i ; return i;'
 echo OK

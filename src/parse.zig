@@ -309,7 +309,36 @@ fn stmt() anyerror!*Node {
             node = try newNode(NodeKind.ND_WHILE, exp, try stmt());
             return node;
         },
-        TokenKind.TK_FOR => {},
+        TokenKind.TK_FOR => {
+            token = token.?.next;
+
+            var expr1: ?*Node = null;
+            var expr2: ?*Node = null;
+            var expr3: ?*Node = null;
+
+            try expect("(");
+
+            if (!consume(";")) {
+                expr1 = try expr();
+                try expect(";");
+            }
+
+            if (!consume(";")) {
+                expr2 = try expr();
+                try expect(";");
+            }
+
+            if (!consume(")")) {
+                expr3 = try expr();
+                try expect(")");
+            }
+
+            return try newNode(
+                NodeKind.ND_FOR,
+                try newNode(NodeKind.ND_FOR, expr1, expr2),
+                try newNode(NodeKind.ND_FOR, expr3, try stmt()),
+            );
+        },
         else => {
             node = try expr();
         },
