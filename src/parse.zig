@@ -294,6 +294,7 @@ fn stmt() anyerror!*Node {
             try expect(")");
             const then = try stmt();
             if (token.?.kind == TokenKind.TK_ELSE) {
+                token = token.?.next;
                 const _else = try stmt();
                 const stmts = try newNode(NodeKind.ND_IF_ELSE, then, _else);
                 return try newNode(NodeKind.ND_IF_ELSE, exp, stmts);
@@ -303,7 +304,10 @@ fn stmt() anyerror!*Node {
         TokenKind.TK_WHILE => {
             token = token.?.next;
             try expect("(");
-            node = try newNode(NodeKind.ND_IF, try expr(), null);
+            const exp = try expr();
+            try expect(")");
+            node = try newNode(NodeKind.ND_WHILE, exp, try stmt());
+            return node;
         },
         TokenKind.TK_FOR => {},
         else => {

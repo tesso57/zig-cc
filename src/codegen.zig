@@ -87,6 +87,34 @@ fn gen(node: *Node) anyerror!void {
             try stdout.writer().print(".Lend{d}:\n", .{now});
             return;
         },
+        NodeKind.ND_IF_ELSE => {
+            const now = label;
+            label += 1;
+            try gen(node.lhs.?);
+            try stdout.writeAll("   pop rax\n");
+            try stdout.writeAll("   cmp rax, 0\n");
+            try stdout.writer().print("   je .Lelse{d}\n", .{now});
+            try gen(node.rhs.?.lhs.?);
+            try stdout.writer().print("   jmp .Lend{d}\n", .{now});
+            try stdout.writer().print(".Lelse{d}:\n", .{now});
+            try gen(node.rhs.?.rhs.?);
+            try stdout.writer().print(".Lend{d}:\n", .{now});
+            return;
+        },
+        NodeKind.ND_WHILE => {
+            const now = label;
+            label += 1;
+            try stdout.writer().print(".Lbegin{d}:\n", .{now});
+            try gen(node.lhs.?);
+            try stdout.writeAll("   pop rax\n");
+            try stdout.writeAll("   cmp rax, 0\n");
+            try stdout.writer().print("   je .Lend{d}\n", .{now});
+            try gen(node.rhs.?);
+            try stdout.writer().print("   jmp .Lbegin{d}\n", .{now});
+            try gen(node.rhs.?.rhs.?);
+            try stdout.writer().print(".Lend{d}:\n", .{now});
+            return;
+        },
         else => {},
     }
     try gen(node.lhs.?);
