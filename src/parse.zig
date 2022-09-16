@@ -24,6 +24,7 @@ var token: ?*Token = null;
 var input: []const u8 = undefined;
 var locals: ?*LVar = null;
 var stackSize: usize = 0;
+var functionName: []const u8 = undefined;
 
 const TokenKind = enum {
     TK_RESERVED, // 記号
@@ -70,6 +71,7 @@ pub const NodeKind = enum {
     ND_WHILE, // while
     ND_FOR, // for
     ND_BLOCK, // block
+    ND_FUNCALL, // function
 };
 
 pub const Node = struct {
@@ -78,6 +80,7 @@ pub const Node = struct {
     lhs: ?*Node,
     rhs: ?*Node,
     val: i32,
+    functionName: []const u8,
     offset: i32,
 };
 
@@ -167,7 +170,6 @@ pub fn tokenize(p: []const u8) !void {
                 if (!isIdent2(p[j])) break;
             }
             cur = try newToken(TokenKind.TK_IDENT, cur, p[i..j], i);
-            stackSize += 1;
             i = j - 1;
             continue;
         }
@@ -180,7 +182,6 @@ pub fn tokenize(p: []const u8) !void {
         if (isDigit(p[i])) {
             cur = try newToken(TokenKind.TK_NUM, cur, p[i .. i + 1], i);
             cur.val = getInt(u8, p, &i);
-            stackSize += 1;
             continue;
         }
         try errorAt(p, i, "トークナイズできない");
@@ -288,6 +289,7 @@ fn program() !*Node {
         .rhs = null,
         .val = 0,
         .offset = 0,
+        .functionName = "",
     };
     var cur: *Node = &(head.?);
     while (token.?.kind != TokenKind.TK_EOF) {
@@ -460,8 +462,26 @@ fn primary() anyerror!*Node {
     }
 
     if (token.?.kind == TokenKind.TK_NUM) {
+        stackSize += 1;
         return newNodeNum(try expectNumber());
     }
 
-    return newNodeVal();
+    if (token.?.kind == TokenKind.TK_IDENT) {
+        if (!isEqual(token.?.next.?.char, "(")) {
+            stackSize += 1;
+
+            return try newNodeVal();
+        } else {
+            stackSize += 1;
+
+            var node = try newNode(NodeKind.ND_FUNCALL, null, null);
+            node.functionName = token.?.char;
+            token = token.?.next;
+            token = token.?.next;
+            try expect(")");
+            return node;
+        }
+    }
+    try errorAt(input, token.?.pos, "パースできない");
+    return error.TokenNotFound;
 }

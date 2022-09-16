@@ -14,3 +14,12 @@
 
 ### c compiler emulator
 - [https://godbolt.org/](https://godbolt.org/)
+
+
+## メモ
+
+### zig で作成したオブジェクトファイルをcから呼び出す
+```sh
+$ zig build-obj src/foo.zig -fcompiler-rt
+$ clang  -Wall -Wextra -std=c11 -pedantic -O3 -o main foo.o main.c
+```

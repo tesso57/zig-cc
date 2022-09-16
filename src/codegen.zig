@@ -150,6 +150,12 @@ fn gen(node: *Node) anyerror!void {
             try gen(node.rhs.?);
             return;
         },
+        NodeKind.ND_FUNCALL => {
+            try stdout.writeAll("   mov rax, 0\n");
+            try stdout.writer().print("   call {s}\n", .{node.functionName});
+            try stdout.writeAll("   push rax\n");
+            return;
+        },
         else => {},
     }
     try gen(node.lhs.?);
