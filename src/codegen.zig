@@ -13,25 +13,26 @@ const stderr = std.io.getStdErr();
 const parse = @import("./parse.zig");
 const Node = parse.Node;
 const NodeKind = parse.NodeKind;
+const Function = parse.Function;
 
 var label: u32 = 0;
 
-pub fn codegen(node: *Node) anyerror!void {
-    var cur: ?*Node = node;
+pub fn codegen(func: *Function) anyerror!void {
+    var cur: ?*Node = func.node;
     try stdout.writeAll(".intel_syntax noprefix\n");
     try stdout.writeAll(".globl main\n");
     try stdout.writeAll("main:\n");
 
-    // プロローグ
-    // 変数26個分の領域を確保する
+    // // プロローグ
+    // // 変数26個分の領域を確保する
     try stdout.writeAll("   push rbp\n");
     try stdout.writeAll("   mov rbp, rsp\n");
-    try stdout.writeAll("   sub rsp, 208\n");
+    try stdout.writer().print("   sub rsp, {d}\n", .{func.stackSize * 8}); // TODO: スタック計算
 
     while (cur.?.kind != NodeKind.ND_EOF) : (cur = cur.?.next.?) {
         try gen(cur.?);
+        try stdout.writeAll("   pop rax\n");
     }
-    try stdout.writeAll("   pop rax\n");
 
     try stdout.writeAll("   mov rsp, rbp\n");
     try stdout.writeAll("   pop rbp\n");
@@ -142,6 +143,12 @@ fn gen(node: *Node) anyerror!void {
             try stdout.writer().print("   jmp .Lbegin{d}\n", .{now});
             try stdout.writer().print(".Lend{d}:\n", .{now});
             return;
+        },
+        NodeKind.ND_BLOCK => {
+            try gen(node.lhs.?);
+            try stdout.writeAll("   pop rax\n");
+            try gen(node.rhs.?);
+            try stdout.writeAll("   pop rax\n");
         },
         else => {},
     }

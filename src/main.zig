@@ -24,8 +24,8 @@ pub fn main() !void {
     var i: usize = 0;
     while (std.os.argv[1][i] != 0) : (i += 1) {}
     var input: []const u8 = std.os.argv[1][0 .. i + 1];
-    const node = try parse.parse(input);
-    try codegen.codegen(node);
+    const func = try parse.parse(input);
+    try codegen.codegen(func);
 
     return;
 }

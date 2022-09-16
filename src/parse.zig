@@ -23,6 +23,7 @@ const getInt = util.getInt;
 var token: ?*Token = null;
 var input: []const u8 = undefined;
 var locals: ?*LVar = null;
+var stackSize: usize = 0;
 
 const TokenKind = enum {
     TK_RESERVED, // 記号
@@ -68,6 +69,7 @@ pub const NodeKind = enum {
     ND_IF_ELSE, // if else
     ND_WHILE, // while
     ND_FOR, // for
+    ND_BLOCK,
 };
 
 pub const Node = struct {
@@ -79,10 +81,19 @@ pub const Node = struct {
     offset: i32,
 };
 
-pub fn parse(p: []const u8) !*Node {
+pub const Function = struct {
+    node: ?*Node,
+    stackSize: usize,
+};
+
+pub fn parse(p: []const u8) !*Function {
     input = p;
     try tokenize(p);
-    return try program();
+    const node = try program();
+    const func = try allocator.create(Function);
+    func.node = node;
+    func.stackSize = stackSize;
+    return func;
 }
 
 fn newToken(kind: TokenKind, cur: *Token, char: []const u8, pos: usize) !*Token {
@@ -116,11 +127,6 @@ pub fn tokenize(p: []const u8) !void {
                 i += 1;
                 continue;
             }
-            cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1], i);
-            continue;
-        }
-
-        if (p[i] == '=' or p[i] == ';') {
             cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1], i);
             continue;
         }
@@ -160,12 +166,13 @@ pub fn tokenize(p: []const u8) !void {
             while (p[j] != 0) : (j += 1) {
                 if (!isIdent2(p[j])) break;
             }
-            cur = try newToken(TokenKind.TK_RESERVED, cur, p[i..j], i);
+            cur = try newToken(TokenKind.TK_IDENT, cur, p[i..j], i);
+            stackSize += 1;
             i = j - 1;
             continue;
         }
 
-        if (p[i] == '+' or p[i] == '-' or p[i] == '*' or p[i] == '/' or p[i] == '(' or p[i] == ')') {
+        if (p[i] == '+' or p[i] == '-' or p[i] == '*' or p[i] == '/' or p[i] == '(' or p[i] == ')' or p[i] == '=' or p[i] == ';' or p[i] == '{' or p[i] == '}') {
             cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1], i);
             continue;
         }
@@ -173,6 +180,7 @@ pub fn tokenize(p: []const u8) !void {
         if (isDigit(p[i])) {
             cur = try newToken(TokenKind.TK_NUM, cur, p[i .. i + 1], i);
             cur.val = getInt(u8, p, &i);
+            stackSize += 1;
             continue;
         }
         try errorAt(p, i, "トークナイズできない");
@@ -257,6 +265,21 @@ fn newNodeVal() !*Node {
     return node;
 }
 
+// program    = stmt*
+// stmt       = expr ";"
+//            | "if" "(" expr ")" stmt ("else" stmt)?
+//            | "while" "(" expr ")" stmt
+//            | "for" "(" expr? ";" expr? ";" expr? ")" stmt
+//            | "{" stmt* "}"
+// expr       = assign
+// assign     = equality ("=" assign)?
+// equality   = relational ("==" relational | "!=" relational)*
+// relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+// add        = mul ("+" mul | "-" mul)*
+// mul        = unary ("*" unary | "/" unary)*
+// unary      = ("+" | "-")? primary
+// primary    = num | ident | "(" expr ")"
+
 fn program() !*Node {
     var head: ?Node = Node{
         .kind = NodeKind.ND_ADD,
@@ -340,7 +363,16 @@ fn stmt() anyerror!*Node {
             );
         },
         else => {
-            node = try expr();
+            if (consume("{")) {
+                node = try stmt();
+                while (true) {
+                    if (!consume("}")) {
+                        node = try newNode(NodeKind.ND_BLOCK, node, try stmt());
+                    } else return node;
+                }
+            } else {
+                node = try expr();
+            }
         },
     }
 
