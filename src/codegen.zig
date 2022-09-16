@@ -148,7 +148,7 @@ fn gen(node: *Node) anyerror!void {
             try gen(node.lhs.?);
             try stdout.writeAll("   pop rax\n");
             try gen(node.rhs.?);
-            try stdout.writeAll("   pop rax\n");
+            return;
         },
         else => {},
     }

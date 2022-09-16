@@ -61,4 +61,8 @@ assert 0 'if(0) 1;else 0;'
 
 assert 10 'i = 0; while(i < 10) i = i + 1; return i;'
 assert 100 'for(i=0;i < 100;i = i + 1) i ; return i;'
+
+assert 100 '{for(i=0;i < 100;i = i + 1) i ; return i;}'
+assert 1 '{for(i=0;i < 100;i = i + 1) i ; i;}{1;}'
+assert 100 '{for(i=0;i < 100;i = i + 1) i ; return i;}{1;}'
 echo OK

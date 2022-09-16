@@ -69,7 +69,7 @@ pub const NodeKind = enum {
     ND_IF_ELSE, // if else
     ND_WHILE, // while
     ND_FOR, // for
-    ND_BLOCK,
+    ND_BLOCK, // block
 };
 
 pub const Node = struct {
