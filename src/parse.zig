@@ -81,6 +81,7 @@ pub const Node = struct {
     rhs: ?*Node,
     val: i32,
     functionName: []const u8,
+    args: ?*Node,
     offset: i32,
 };
 
@@ -174,7 +175,7 @@ pub fn tokenize(p: []const u8) !void {
             continue;
         }
 
-        if (p[i] == '+' or p[i] == '-' or p[i] == '*' or p[i] == '/' or p[i] == '(' or p[i] == ')' or p[i] == '=' or p[i] == ';' or p[i] == '{' or p[i] == '}') {
+        if (p[i] == '+' or p[i] == '-' or p[i] == '*' or p[i] == '/' or p[i] == '(' or p[i] == ')' or p[i] == '=' or p[i] == ';' or p[i] == '{' or p[i] == '}' or p[i] == ',') {
             cur = try newToken(TokenKind.TK_RESERVED, cur, p[i .. i + 1], i);
             continue;
         }
@@ -279,7 +280,8 @@ fn newNodeVal() !*Node {
 // add        = mul ("+" mul | "-" mul)*
 // mul        = unary ("*" unary | "/" unary)*
 // unary      = ("+" | "-")? primary
-// primary    = num | ident | "(" expr ")"
+// primary    = num | ident | "(" expr ")" | funcall
+// funcall    = ident "(" (assign, ("," assign)*)? ")"
 
 fn program() !*Node {
     var head: ?Node = Node{
@@ -290,6 +292,7 @@ fn program() !*Node {
         .val = 0,
         .offset = 0,
         .functionName = "",
+        .args = null,
     };
     var cur: *Node = &(head.?);
     while (token.?.kind != TokenKind.TK_EOF) {
@@ -473,15 +476,36 @@ fn primary() anyerror!*Node {
             return try newNodeVal();
         } else {
             stackSize += 1;
-
-            var node = try newNode(NodeKind.ND_FUNCALL, null, null);
-            node.functionName = token.?.char;
-            token = token.?.next;
-            token = token.?.next;
-            try expect(")");
-            return node;
+            return try funcall();
         }
     }
     try errorAt(input, token.?.pos, "パースできない");
     return error.TokenNotFound;
+}
+
+fn funcall() anyerror!*Node {
+    var node = try newNode(NodeKind.ND_FUNCALL, null, null);
+    node.functionName = token.?.char;
+    token = token.?.next.?.next;
+
+    var head: ?Node = Node{
+        .kind = NodeKind.ND_ADD,
+        .next = null,
+        .lhs = null,
+        .rhs = null,
+        .val = 0,
+        .offset = 0,
+        .functionName = "",
+        .args = null,
+    };
+    var cur: *Node = &(head.?);
+
+    while (!consume(")")) {
+        if (cur != &(head.?)) try expect(",");
+        cur.next = try assign();
+        cur = cur.next.?;
+        cur.next = null;
+    }
+    node.args = head.?.next orelse null;
+    return node;
 }

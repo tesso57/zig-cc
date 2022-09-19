@@ -17,17 +17,18 @@ const Function = parse.Function;
 
 var label: u32 = 0;
 
+const argregs = [_][]const u8{ "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
+
 pub fn codegen(func: *Function) anyerror!void {
     var cur: ?*Node = func.node;
     try stdout.writeAll(".intel_syntax noprefix\n");
     try stdout.writeAll(".globl main\n");
     try stdout.writeAll("main:\n");
 
-    // // プロローグ
-    // // 変数26個分の領域を確保する
+    // プロローグ
     try stdout.writeAll("   push rbp\n");
     try stdout.writeAll("   mov rbp, rsp\n");
-    try stdout.writer().print("   sub rsp, {d}\n", .{func.stackSize * 8}); // TODO: スタック計算
+    try stdout.writer().print("   sub rsp, {d}\n", .{func.stackSize * 8});
 
     while (cur.?.kind != NodeKind.ND_EOF) : (cur = cur.?.next.?) {
         try gen(cur.?);
@@ -151,6 +152,16 @@ fn gen(node: *Node) anyerror!void {
             return;
         },
         NodeKind.ND_FUNCALL => {
+            var nargs: i32 = 0;
+            var cur = node.args;
+            while (cur != null) : (cur = cur.?.next) {
+                try gen(cur.?);
+                nargs += 1;
+            }
+            nargs -= 1;
+            while (nargs >= 0) : (nargs -= 1) {
+                try stdout.writer().print("   pop {s}\n", .{argregs[@intCast(usize, nargs)]});
+            }
             try stdout.writeAll("   mov rax, 0\n");
             try stdout.writer().print("   call {s}\n", .{node.functionName});
             try stdout.writeAll("   push rax\n");
